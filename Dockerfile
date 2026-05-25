@@ -30,6 +30,18 @@ RUN apk add --no-cache git cmake && \
     cd .. && \
     rm -rf brlaser
 
+# Build and install p-touch from source
+RUN apk add --no-cache git cmake autoconf automake libtool m4 build-base cups-dev pkgconf pkgconfig perl-dev libpng libpng-dev libxml2 libxml2-dev perl-xml-libxml && \
+	git clone https://github.com/philpem/printer-driver-ptouch.git && \
+	cpan -i XML::LibXML && \
+    cd printer-driver-ptouch && \
+	./autogen.sh  && \
+	./configure  && \
+	make && \
+	make install && \
+	cd .. && \
+	rm -rf printer-driver-ptouch
+
 # Build and install gutenprint from source
 RUN wget -O gutenprint-5.3.5.tar.xz https://sourceforge.net/projects/gimp-print/files/gutenprint-5.3/5.3.5/gutenprint-5.3.5.tar.xz/download && \
     tar -xJf gutenprint-5.3.5.tar.xz && \
