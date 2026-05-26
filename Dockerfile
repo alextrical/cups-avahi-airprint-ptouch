@@ -18,6 +18,7 @@ RUN echo -e "https://dl-cdn.alpinelinux.org/alpine/edge/testing\nhttps://dl-cdn.
 	wget \
 	perl \
 	splix \
+	libpng \
 	&& rm -rf /var/cache/apk/*
 
 # Build and install brlaser from source
@@ -25,36 +26,53 @@ RUN apk add --no-cache git cmake && \
     git clone https://github.com/pdewacht/brlaser.git && \
     cd brlaser && \
     cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 . && \
-    make && \
+    make -j$(nproc) && \
     make install && \
     cd .. && \
     rm -rf brlaser
 
-# Build and install p-touch from source
-RUN apk add --no-cache git cmake autoconf automake libtool m4 build-base cups-dev pkgconf pkgconfig perl-dev libpng libpng-dev libxml2 libxml2-dev perl-xml-libxml && \
-	git clone https://github.com/philpem/printer-driver-ptouch.git && \
-	cpan -i XML::LibXML && \
-    cd printer-driver-ptouch && \
-	./autogen.sh  && \
-	./configure  && \
-	make && \
+# Build and install gutenprint from source
+RUN wget -O gutenprint.tar.xz https://sourceforge.net/projects/gimp-print/files/gutenprint-5.3/5.3.5/gutenprint-5.3.5.tar.xz/download && \
+	tar -xJf gutenprint.tar.xz && \
+	cd gutenprint-5.3.5 && \
+	# Patch to rename conflicting PAGESIZE identifiers to GPT_PAGESIZE in all files in src/testpattern
+	find src/testpattern -type f -exec sed -i 's/\bPAGESIZE\b/GPT_PAGESIZE/g' {} + && \
+	./configure && \
+	make -j$(nproc) && \
 	make install && \
 	cd .. && \
-	rm -rf printer-driver-ptouch
+	rm -rf gutenprint-5.3.5 gutenprint.tar.xz && \
+	# Fix cups-genppdupdate script shebang
+	sed -i '1s|.*|#!/usr/bin/perl|' /usr/sbin/cups-genppdupdate
 
-# Build and install gutenprint from source
-RUN wget -O gutenprint-5.3.5.tar.xz https://sourceforge.net/projects/gimp-print/files/gutenprint-5.3/5.3.5/gutenprint-5.3.5.tar.xz/download && \
-    tar -xJf gutenprint-5.3.5.tar.xz && \
-    cd gutenprint-5.3.5 && \
-    # Patch to rename conflicting PAGESIZE identifiers to GPT_PAGESIZE in all files in src/testpattern
-    find src/testpattern -type f -exec sed -i 's/\bPAGESIZE\b/GPT_PAGESIZE/g' {} + && \
+# Build and install p-touch from source
+RUN apk add --no-cache autoconf automake libtool m4 build-base pkgconf pkgconfig libpng-dev perl-dev libxml2-dev && \
+    git clone https://github.com/philpem/printer-driver-ptouch.git && \
+    cd printer-driver-ptouch && \
+	#Patch for "Perl API version v5.38.0 of LibXML.c does not match v5.42.0"
+    export PERL_MM_USE_DEFAULT=1 && \
+    perl -MCPAN -e 'CPAN::Shell->install("XML::LibXML")' && \
+    ./autogen.sh && \
     ./configure && \
     make -j$(nproc) && \
     make install && \
     cd .. && \
-    rm -rf gutenprint-5.3.5 gutenprint-5.3.5.tar.xz && \
-    # Fix cups-genppdupdate script shebang
-    sed -i '1s|.*|#!/usr/bin/perl|' /usr/sbin/cups-genppdupdate
+    rm -rf printer-driver-ptouch
+
+# Build foomatic-db-engine from source and create PPD files for p-touch
+RUN apk add --no-cache libxml2 perl-clone perl-dbi && \
+	git clone https://github.com/OpenPrinting/foomatic-db-engine.git && \
+	cd foomatic-db-engine && \
+	./make_configure && \
+	./configure --prefix=/usr --libdir=/usr/local/lib/perl5/site_perl && \
+	make -j$(nproc) && \
+    export PERL5LIB="$(pwd)/lib" && \
+	./foomatic-compiledb -t ppd -f -j "$(nproc)" ptouch-pt ptouch-ql && \
+	mkdir -p /usr/share/cups/model/ptouch && \
+	mv ppd/*.ppd /usr/share/cups/model/ptouch/ && \
+	cd .. && \
+	rm -rf foomatic-db-engine && \
+	rm -rf /var/cache/apk/*
 
 # This will use port 631
 EXPOSE 631
